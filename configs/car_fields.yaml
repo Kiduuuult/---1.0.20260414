@@ -1,0 +1,38 @@
+# 二手车发帖必填字段配置
+# PM 在此处增加、重命名或修改描述即可调整 Agent 的询问逻辑和信息收集
+fields:
+  - id: "brand_model"
+    name: "品牌型号"
+    description: "二手车的具体品牌和型号，例如：大众高尔夫 2021款"
+    required: true
+    example: "大众 迈腾 2023款 200万/车况极好"
+  
+  - id: "city"
+    name: "看车城市"
+    description: "车辆所在地或看车城市"
+    required: true
+    example: "北京"
+
+  - id: "price"
+    name: "销售价格"
+    description: "希望卖出的价格，单位为万元"
+    required: true
+    example: "12.8"
+
+  - id: "mileage"
+    name: "表显里程"
+    description: "车辆已行驶的公里数，单位为万公里"
+    required: true
+    example: "5.2"
+
+  - id: "reg_date"
+    name: "上牌日期"
+    description: "车辆初次在车管所登记上牌的时间"
+    required: true
+    example: "2023年6月"
+
+  - id: "vin"
+    name: "车架号/VIN"
+    description: "车辆的唯一识别码 (通常是17位)"
+    required: false
+    example: "LBVxxxxxxxxxxxxxx"

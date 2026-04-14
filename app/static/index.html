@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoPost AI | 车BG原生发布助手</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent-color: #3b82f6;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+
+        .container {
+            width: 1000px;
+            height: 700px;
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .chat-section {
+            flex: 1.5;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .chat-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            background: var(--accent-color);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            line-height: 1.5;
+            font-size: 0.95rem;
+            white-space: pre-wrap;
+        }
+
+        .message.bot {
+            background: rgba(255, 255, 255, 0.08);
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message.user {
+            background: var(--accent-color);
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .chat-input-area {
+            padding: 20px;
+            border-top: 1px solid var(--glass-border);
+            display: flex;
+            gap: 12px;
+        }
+
+        input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: white;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input:focus { border-color: var(--accent-color); }
+
+        button {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 0 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .progress-section {
+            flex: 1;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        h2 { font-family: 'Outfit', sans-serif; font-size: 1.4rem; margin-bottom: 20px; }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+            margin-bottom: 15px;
+        }
+
+        .status-badge.error { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .status-badge.working { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+
+        .field-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .list-group-title {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin: 10px 0 5px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .list-group-title::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--glass-border);
+        }
+
+        .field-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            border-left: 3px solid transparent;
+        }
+
+        .field-label { color: var(--text-secondary); }
+        .field-value { color: var(--text-primary); font-weight: 500; text-align: right; }
+
+        .field-item.completed { border-left-color: #22c55e; }
+        .field-item.missing { border-left-color: #64748b; background: rgba(0,0,0,0.1); }
+        .field-item.dynamic { border-left-color: #3b82f6; background: rgba(59,130,246,0.05); }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="chat-section">
+            <div class="chat-header">
+                <div class="avatar">A</div>
+                <div>
+                    <div style="font-weight: 600;">ABG Native Agent</div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary);">在线 | 58同城发布助手</div>
+                </div>
+            </div>
+            <div class="chat-messages" id="chatMessages">
+                <div class="message bot">您好！我是您的智能发帖助理。您可以直接输入想要发布的车辆信息，我会为您处理后端复杂的表单探测与填写。</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="userInput" placeholder="例如：我想卖台吊车..." onkeypress="if(event.key === 'Enter') sendMessage()">
+                <button onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+
+        <div class="progress-section">
+            <h2>RPA 实时状态</h2>
+            <div class="status-badge" id="rpaStatus">等待工作指令...</div>
+            
+            <div id="qrContainer" style="display: none; text-align: center; margin-bottom: 15px;">
+                <p style="font-size: 0.8rem; color: #fbbf24; margin-bottom: 5px;">需要扫码登录 58同城</p>
+                <img id="qrImage" src="" alt="二维码" style="max-width: 140px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.1);">
+            </div>
+
+            <div class="field-list" id="fieldList">
+                <!-- 动态内容 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let userId = 'user_abc_888';
+        let lastState = 'idle';
+
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const message = input.value.trim();
+            if (!message) return;
+            addMessage(message, 'user');
+            input.value = '';
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, message: message })
+                });
+                const data = await response.json();
+                addMessage(data.message, 'bot');
+                updateUI(data);
+            } catch (err) { console.error(err); }
+        }
+
+        function addMessage(text, role) {
+            const container = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            div.textContent = text;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updateUI(data) {
+            const list = document.getElementById('fieldList');
+            const statusBadge = document.getElementById('rpaStatus');
+            const qrContainer = document.getElementById('qrContainer');
+            const qrImage = document.getElementById('qrImage');
+
+            statusBadge.textContent = data.rpa_status || '等待中...';
+            statusBadge.className = 'status-badge';
+            if (data.rpa_state === 'error') statusBadge.classList.add('error');
+            if (['discovering', 'filling', 'waiting_login'].includes(data.rpa_state)) statusBadge.classList.add('working');
+
+            if (data.rpa_result && data.rpa_result.status === 'waiting_login') {
+                qrImage.src = data.rpa_result.image_path + "?t=" + new Date().getTime();
+                qrContainer.style.display = 'block';
+            } else { qrContainer.style.display = 'none'; }
+
+            list.innerHTML = '';
+            const info = data.collected_info || {};
+            const dynFields = data.dynamic_fields || [];
+            
+            // 基础信息组 (动态渲染)
+            list.innerHTML += '<div class="list-group-title">基础发帖参数</div>';
+            const baseFields = data.base_fields || [];
+            baseFields.forEach(f => {
+                if (f.internal) return;
+                const val = info[f.id];
+                const isFilled = val && String(val).trim() !== "";
+                list.innerHTML += `<div class="field-item ${isFilled ? 'completed' : 'missing'}">
+                    <span class="field-label">${f.name}</span>
+                    <span class="field-value">${isFilled ? val : '待采集'}</span>
+                </div>`;
+            });
+
+            // 动态探测组 (Requirement 3)
+            if (dynFields.length > 0) {
+                list.innerHTML += '<div class="list-group-title">RPA 动态探测参数</div>';
+                dynFields.forEach(f => {
+                    const val = info[f.id];
+                    const isFilled = val && String(val).trim() !== "";
+                    list.innerHTML += `<div class="field-item dynamic ${isFilled ? 'completed' : ''}">
+                        <span class="field-label">${f.name}</span>
+                        <span class="field-value">${isFilled ? val : '待追问'}</span>
+                    </div>`;
+                });
+            }
+        }
+
+        setInterval(async () => {
+            try {
+                const response = await fetch(`/api/status?user_id=${userId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.rpa_state === 'need_dynamic_info' && lastState !== 'need_dynamic_info') {
+                        if (data.bot_hint) addMessage(data.bot_hint, 'bot');
+                    }
+                    if (data.rpa_state === 'done' && lastState !== 'done') {
+                        addMessage("自动化发布已完成！请在浏览器核对最终效果并手动确认提及。", 'bot');
+                    }
+                    lastState = data.rpa_state;
+                    updateUI(data);
+                }
+            } catch (e) { console.error(e); }
+        }, 3000);
+    </script>
+</body>
+</html>

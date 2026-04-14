@@ -1,0 +1,62 @@
+# 工程车发帖必填字段配置
+# 对应 post.58.com 工程车发布表单
+fields:
+  - id: "machine_type"
+    name: "机型"
+    description: "工程机械的具体类型，例如：挖掘机、装载机、压路机等"
+    required: true
+    example: "挖掘机"
+
+  - id: "is_new"
+    name: "新旧"
+    description: "车辆的新旧程度（全新/二手）"
+    required: true
+    example: "二手"
+
+  - id: "manufacture_year"
+    name: "出厂年份"
+    description: "设备的生产/出厂年份"
+    required: true
+    example: "2023"
+
+  - id: "manufacture_month"
+    name: "出厂月份"
+    description: "设备的生产/出厂月份"
+    required: true
+    example: "7"
+
+  - id: "price"
+    name: "转让价格"
+    description: "期望的转让价格，单位为万元"
+    required: true
+    example: "12.5"
+
+  - id: "ad_slogan"
+    name: "一句式广告"
+    description: "吸引买家的短标题，用户以前说的‘标题’放在这里"
+    required: false
+    example: "急转，价格可谈"
+
+  - id: "description"
+    name: "补充说明"
+    description: "AI自主根据信息点生成的车况描述。要求：字数必须在10-2000个字之间，且绝对不能包含任何电话、微信或QQ号等联系方式。"
+    required: false
+    example: "车况极好，一直自己操作，没出过力，手续齐全。"
+
+  - id: "other_details"
+    name: "其他细节"
+    description: "非必填。用于收录用户在聊天中闲扯或补充的其他卖点、维保情况、配置信息等杂项，方便用作生成广告的素材。"
+    required: false
+    example: "去年刚换的履带，还在保修期内，带个大空调。"
+
+  - id: "contact_name"
+    name: "联系人"
+    description: "发布人姓名"
+    required: true
+    example: "张先生"
+
+  - id: "contact_phone"
+    name: "联系电话"
+    description: "方便买家联系的手机号码"
+    required: true
+    example: "1800184XXXX"
