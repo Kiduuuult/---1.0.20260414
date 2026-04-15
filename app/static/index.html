@@ -241,7 +241,21 @@
     </div>
 
     <script>
-        let userId = 'user_abc_888';
+        function getOrCreateUserId() {
+            const key = 'abg_agent_user_id';
+            let id = localStorage.getItem(key);
+            if (!id) {
+                if (window.crypto && crypto.randomUUID) {
+                    id = `user_${crypto.randomUUID()}`;
+                } else {
+                    id = `user_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+                }
+                localStorage.setItem(key, id);
+            }
+            return id;
+        }
+
+        let userId = getOrCreateUserId();
         let lastState = 'idle';
 
         async function sendMessage() {

@@ -9,7 +9,7 @@ from playwright.async_api import async_playwright, Playwright, BrowserContext, P
 class CarPostSkill:
     """
     二手车/工程车发布原子技能 (RPA)。
-    深度加固执行层：通过 DOM 验证确保出厂年月填入成功。
+    支持：文本表单填写、图片 HTTP 链接直接注入上传（无需本地文件 / 无 CORS 限制）。
     """
     def __init__(self):
         self.user_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../agent/user_data')
@@ -199,18 +199,52 @@ class CarPostSkill:
 
         # 4. 其他字段
         print("📝 处理剩余动态字段...")
-        skipped = ["machine_type", "is_new", "manufacture_year", "manufacture_month", "price", "ad_slogan", "description", "other_details", "contact_name", "contact_phone", "xiaoshishu"]
+        skipped = ["machine_type", "is_new", "manufacture_year", "manufacture_month", "price", "ad_slogan", "description", "other_details", "contact_name", "contact_phone", "xiaoshishu", "image_urls"]
         for fid, fval in info.items():
             if fid in skipped or not fval or "小时" in fid: continue
-            input_sel = f"input#{fid}, input[name='{fid}']"
-            if await page.locator(input_sel).count() > 0:
-                is_num = any(x in fid.lower() for x in ["ton", "weight", "mile", "dun"])
-                await page.fill(input_sel, self._extract_numbers(str(fval)) if is_num else str(fval), force=True)
-                await page.locator(input_sel).blur()
-            elif await page.locator(f"div.selectordef[name='{fid}']").count() > 0:
-                d_sel = f"div.selectordef[name='{fid}']"
-                await page.click(d_sel, force=True); await asyncio.sleep(0.8)
-                await self._robust_js_click(page, str(fval))
+            
+            print(f"➡️ 准备填充字段: {fid} = {fval}")
+            
+            # 尝试多种选择器：ID, Name
+            input_sel = f"input#{fid}, input[name='{fid}'], .selectordef[id='{fid}'], .selectordef[name='{fid}']"
+            
+            # 如果常规选择器找不到，尝试通过 rows_wrap 的标题查找
+            target_locator = page.locator(input_sel)
+            if await target_locator.count() == 0:
+                print(f"🔍 常规选择器未命中 [{fid}]，尝试获取 rows_title 匹配...")
+                # 寻找包含该 fid（或者名称）的 rows_wrap
+                js_find_sel = f"""(fid) => {{
+                    const rows = Array.from(document.querySelectorAll('.rows_wrap'));
+                    const targetRow = rows.find(r => {{
+                        const input = r.querySelector('input, .selectordef');
+                        return input && (input.id === fid || input.getAttribute('name') === fid);
+                    }});
+                    return targetRow ? (targetRow.querySelector('input') ? 'input' : '.selectordef') : null;
+                }}"""
+                found_tag = await page.evaluate(js_find_sel, fid)
+                if found_tag:
+                    target_locator = page.locator(f".rows_wrap:has(input[name='{fid}'], .selectordef[name='{fid}'], input[id='{fid}'], .selectordef[id='{fid}']) {found_tag}")
+            
+            if await target_locator.count() > 0:
+                tag_name = await target_locator.evaluate("el => el.tagName")
+                is_selectordef = await target_locator.evaluate("el => el.classList.contains('selectordef')")
+                
+                if is_selectordef:
+                    print(f"👉 识别为选择器字段: {fid}")
+                    await target_locator.click(force=True)
+                    await asyncio.sleep(1.0)
+                    if await self._robust_js_click(page, str(fval)):
+                        print(f"✅ 字段 [{fid}] 已通过 JS 注入选择")
+                    else:
+                        print(f"⚠️ 字段 [{fid}] JS 点击未奏效，列表可能未弹出或值不存在")
+                else:
+                    print(f"👉 识别为输入框字段: {fid}")
+                    is_num = any(x in fid.lower() for x in ["ton", "weight", "mile", "dun"])
+                    await target_locator.fill(self._extract_numbers(str(fval)) if is_num else str(fval), force=True)
+                    await target_locator.blur()
+                    print(f"✅ 字段 [{fid}] 填充成功")
+            else:
+                print(f"❌ 无法在页面上定位到字段: {fid}")
 
         # 5. 描述与联系人
         try:
@@ -220,6 +254,80 @@ class CarPostSkill:
             if info.get("contact_name"): await page.fill("input#goblianxiren", info.get("contact_name"), force=True)
             if info.get("contact_phone"): await page.fill("input#Phone", info.get("contact_phone"), force=True)
         except: pass
+
+        # 6. 图片上传
+        image_urls = info.get("image_urls") or []
+        if image_urls:
+            await self._upload_images(page, image_urls)
+
+    async def _upload_images(self, page, image_paths: List[str]):
+        """
+        图片上传：支持 HTTP/HTTPS 链接 和 本地文件路径混用。
+        - HTTP 链接：通过 page.request.get 拉取为内存 buffer（走浏览器 Session，无 CORS 问题）
+        - 本地路径：直接传路径字符串
+        全部通过 set_input_files 注入到 58.com 的隐藏 file input，不需要点击弹窗。
+        """
+        # 58.com 图片上传区的 file input 选择器
+        FILE_INPUT_SEL = "#imgUpload .html5 input[type='file']"
+        MAX_IMAGES = 16
+
+        # 过滤空值
+        upload_inputs = [p for p in image_paths if isinstance(p, str) and p.strip()]
+        if not upload_inputs:
+            print("⚠️ 图片列表为空，跳过上传")
+            return
+        if len(upload_inputs) > MAX_IMAGES:
+            print(f"⚠️ 图片数量 {len(upload_inputs)} 超过最大限制 {MAX_IMAGES}，截取前 {MAX_IMAGES} 张")
+            upload_inputs = upload_inputs[:MAX_IMAGES]
+
+        try:
+            # 等待 file input 出现（页面可能异步渲染）
+            await page.wait_for_selector(FILE_INPUT_SEL, timeout=8000)
+        except Exception as e:
+            print(f"❌ 未找到图片上传 input，跳过: {e}")
+            return
+
+        final_files = []
+        for p in upload_inputs:
+            if p.startswith("http://") or p.startswith("https://"):
+                try:
+                    # 用浏览器自身的 request 上下文下载，携带 Cookie/Session，天然无 CORS
+                    response = await page.request.get(p, timeout=30000)
+                    if response.ok:
+                        filename = p.split("/")[-1].split("?")[0] or "image.jpg"
+                        # 确保有正确的扩展名
+                        if "." not in filename:
+                            filename += ".jpg"
+                        mime = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+                        final_files.append({
+                            "name": filename,
+                            "mimeType": mime,
+                            "buffer": await response.body()
+                        })
+                        print(f"✅ 图片下载成功: {p} → {filename} ({mime})")
+                    else:
+                        print(f"⚠️ 图片请求失败 [{response.status}]: {p}")
+                except Exception as e:
+                    print(f"⚠️ 图片下载异常: {p} — {e}")
+            else:
+                # 本地文件路径
+                if os.path.isfile(p):
+                    final_files.append(p)
+                    print(f"✅ 本地图片已加入: {p}")
+                else:
+                    print(f"⚠️ 本地文件不存在，跳过: {p}")
+
+        if not final_files:
+            print("⚠️ 没有准备好有效的图片资源，跳过上传")
+            return
+
+        try:
+            await page.locator(FILE_INPUT_SEL).set_input_files(final_files)
+            print(f"📤 图片已注入 file input，共 {len(final_files)} 张，等待页面处理...")
+            await asyncio.sleep(3)  # 等待前端上传逻辑触发和缩略图渲染
+            print("✅ 图片上传步骤完成")
+        except Exception as e:
+            print(f"❌ set_input_files 失败: {e}")
 
     async def run(self, car_info: Dict[str, Any], mode: str = "fill", qr_callback=None) -> Dict[str, Any]:
         try:

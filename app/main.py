@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import re
 import asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
@@ -7,6 +8,12 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from app.agent.engine import NativeAgentEngine
 from app.skills.car_post_rpa import car_post_skill
+
+# 图片 URL 检测正则：匹配标准 HTTP(S) 图片链接，防止误伤纯数字或简短文本
+_IMAGE_URL_RE = re.compile(
+    r'https?://[a-zA-Z0-9][-a-zA-Z0-9._]*\.[a-zA-Z]{2,}(?::\d+)?(?:/[^\s?#]*)?\.(?:jpg|jpeg|png|gif|webp|bmp)(?:\?[^\s#]*)?',
+    re.IGNORECASE
+)
 
 load_dotenv()
 
@@ -31,6 +38,7 @@ async def chat(request: Request):
     
     if user_id not in sessions:
         initial_info = {f.get("id"): "" for f in engine.fields if f.get("id") and not f.get("internal")}
+        initial_info["image_urls"] = []   # 图片 URL 列表单独维护，不走 LLM 提取
         sessions[user_id] = {
             "history": [],
             "collected_info": initial_info,
@@ -43,7 +51,36 @@ async def chat(request: Request):
         }
     
     session = sessions[user_id]
-    
+
+    # ── 图片 URL 拦截层（确定性处理，不走 LLM）──────────────────────────────
+    # 检测用户消息中是否包含图片链接（支持带参数的 CDN URL）
+    image_urls_in_msg = [m.group(0) for m in _IMAGE_URL_RE.finditer(message)]
+
+    if image_urls_in_msg:
+        # 直接累积到 session，完全不经过 LLM
+        existing = session["collected_info"].get("image_urls") or []
+        for url in image_urls_in_msg:
+            if url not in existing:           # 去重
+                existing.append(url)
+        session["collected_info"]["image_urls"] = existing
+
+        count = len(existing)
+        reply_msg = f"收到第 {count} 张图片 ✅\n还有图片的话继续发，发完告诉我一声就行～"
+
+        # 把本条消息记入历史，短路返回（不调 LLM，省 token 也省时间）
+        session["history"].append({"role": "user", "content": message})
+        session["history"].append({"role": "assistant", "content": reply_msg})
+
+        return JSONResponse(content={
+            "message": reply_msg,
+            "collected_info": session["collected_info"],
+            "rpa_status": session["status"],
+            "rpa_result": session.get("pending_rpa_result"),
+            "rpa_state": session["rpa_state"],
+            "status": "success"
+        })
+    # ── 拦截层结束 ────────────────────────────────────────────────────────────
+
     result = await engine.chat(
         user_input=message,
         history=session["history"],
@@ -53,11 +90,34 @@ async def chat(request: Request):
     
     session["history"].append({"role": "user", "content": message})
     session["history"].append({"role": "assistant", "content": result["content"]})
+    # 保留 image_urls（LLM 的 updated_collected_info 不含此字段，需手动补回）
+    result["updated_collected_info"]["image_urls"] = session["collected_info"].get("image_urls", [])
     session["collected_info"] = result["updated_collected_info"]
 
     _update_session_state(session)
 
     intent_to_publish = result.get("intent_to_publish", False)
+
+    # --- 物理拦截网关：检查关键核心字段是否收齐 ---
+    critical_ids = ["machine_type", "price", "contact_name", "contact_phone", "image_urls"]
+    missing_critical = []
+    for cid in critical_ids:
+        val = session["collected_info"].get(cid)
+        if cid == "image_urls":
+            if not isinstance(val, list) or len(val) == 0:
+                missing_critical.append("图片")
+        elif not val or (isinstance(val, str) and not val.strip()):
+            # 查找显示名
+            fname = next((f["name"] for f in engine.fields if f["id"] == cid), cid)
+            missing_critical.append(fname)
+    
+    # 强力纠偏：没收齐关键信息，绝不允许进入探测/发布环节
+    if intent_to_publish and missing_critical:
+        print(f"🛑 强力拦截：用户还有核心项缺失 {missing_critical}，拒绝执行意图。")
+        intent_to_publish = False
+        # 修正回复内容，避免模型产生“已收齐”的误导
+        if "收齐" in result["content"] or "浏览器" in result["content"] or "探测" in result["content"]:
+            result["content"] = f"老板，我看咱还有【{'、'.join(missing_critical)}】没齐呢，得收齐了才能发。咱先把这些补上好不？"
 
     if session["rpa_state"] == "waiting_login" and intent_to_publish and not session["rpa_task_running"]:
         session["pending_rpa_result"] = None
@@ -74,7 +134,7 @@ async def chat(request: Request):
         session["rpa_task_running"] = True
         session["pending_rpa_result"] = None
         asyncio.create_task(run_rpa_discovery_task(user_id))
-        result["content"] = f"【执行探测】好的，请看浏览器。我正在为您确认该机型所需的具体参数..."
+        result["content"] = f"【系统提示：开始执行探测】好的，请看浏览器。我正在为您确认该机型所需的具体参数..."
     
     elif intent_to_publish and session["rpa_state"] == "ready_to_fill" and session["discovery_done"] and not session["rpa_task_running"]:
         session["status"] = "正在执行全量自动填表..."
